@@ -1,6 +1,6 @@
 #![allow(unused)]
+use rtt_target::{rprintln};
 use core::mem::size_of;
-use alloc::vec::Vec;
 
 const READ_FLAG: u8 = 0x80;
 const WRITE_FLAG: u8 = 0x7F;
@@ -8,77 +8,67 @@ const WRITE_FLAG: u8 = 0x7F;
 pub trait Register {
     //addr returns list of addresses that this register contains
     fn first_addr(&self) -> u8;
+    fn len(&self) -> usize;
     //returns array with first addr of Register, followed by 0x00 * len of register
-    fn read(&self) -> Vec<u8>;
-    fn write(&self) -> Vec<u8>;
+    fn read<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8];
+    fn write<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8];
 
     fn new(values: &[u8]) -> Self;
 }
 
-macro_rules! create_struct {
-    // input is empty: time to output
-    (@inner () -> {struct $name:ident $(($id:ident: $ty:ty))*}) => {
-        struct $name { $($id: $ty),* }
-    };
-
-    // throw on the last field
-    (@inner ($id:ident: $no: expr) -> {$($output:tt)*}) => {
-        create_struct!(@inner () -> {$($output)* ($id: [bool; $no])});
-    };
-      // throw on the last field
-    (@inner ($id:ident) -> {$($output:tt)*}) => {
-        create_struct!(@inner () -> {$($output)* ($id: bool)});
-    };
-
-    // throw on another field (not the last one)
-    (@inner ($id:ident: $no:expr, $($next:tt)*) -> {$($output:tt)*}) => {
-        create_struct!(@inner ($($next)*) -> {$($output)* ($id: [bool; $no])});
-    };
-    // throw on another field (not the last one)
-    (@inner ($id:ident, $($next:tt)*) -> {$($output:tt)*}) => {
-        create_struct!(@inner ($($next)*) -> {$($output)* ($id: bool)});
-    };
-
-    // entry point
-    ($name:ident, $tp:ty) => {
-
-
-    }
-}
-///create_struct!(@inner ($($input)*) -> {struct $name});
-
 macro_rules! create_register {
     // entry point
     ($name: ident, u8[$addr0: expr], [$($output:tt)*]) => {
+        #[derive(Default)]
         pub struct $name(u8);
         impl Register for $name {
             fn first_addr(&self) -> u8 {
                 $addr0
             }
-            fn read(&self) -> Vec<u8> {
-                vec![$addr0 | READ_FLAG, 0x00]
+            fn len(&self) -> usize { 1 }
+            fn read<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8]  {
+                buf[0] = $addr0 | READ_FLAG;
+                &mut buf[..self.len() + 1]
             }
-            fn write(&self) -> Vec<u8> {
-                vec![$addr0 & WRITE_FLAG, self.0]
+            fn write<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8] {
+                buf[0] = $addr0 & WRITE_FLAG;
+                for (i, v) in self.0.to_be_bytes().iter().enumerate() {
+                    buf[1+i] = *v
+                }
+                rprintln!("{:#04x} writes {:08b}", self.first_addr(), buf[1]);
+                &mut buf[..self.len() + 1]
             }
             fn new(values: &[u8]) -> Self {
-                Self(values[0])
+                if values.len() == 1 {
+                     Self(values[0])
+                } else if values.len() == 2 {
+                     Self(values[1])
+                } else {
+                    panic!("Wrong values")
+                }
+
             }
         }
     };
     ($name: ident, u16[$addr0: expr, $addr1: expr], [$($output:tt)*]) => {
+        #[derive(Default)]
         pub struct $name(u16);
         impl Register for $name {
             fn first_addr(&self) -> u8 {
                 $addr0
             }
-            fn read(&self) -> Vec<u8> {
-                vec![$addr0 | READ_FLAG, 0x00, 0x00]
+            fn len(&self) -> usize { 2 }
+            fn read<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8]  {
+                buf[0] = $addr0 | READ_FLAG;
+                &mut buf[..self.len() + 1]
             }
 
-            fn write(&self) -> Vec<u8> {
-                let [a, b] = self.0.to_be_bytes();
-                vec![$addr0 & WRITE_FLAG, a, b]
+            fn write<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8] {
+                buf[0] = $addr0 & WRITE_FLAG;
+                for (i, v) in self.0.to_be_bytes().iter().enumerate() {
+                    buf[1+i] = *v
+                }
+                &mut buf[..self.len() + 1]
             }
             fn new(values: &[u8]) -> Self {
                 if values.len() == 3 {
@@ -92,17 +82,23 @@ macro_rules! create_register {
         }
     };
     ($name: ident, u32[$addr0: expr, $addr1: expr, $addr2: expr], [$($output:tt)*]) => {
+        #[derive(Default)]
         pub struct $name(u32);
         impl Register for $name {
             fn first_addr(&self) -> u8 {
                 $addr0
             }
-            fn read(&self) -> Vec<u8> {
-                vec![$addr0 | READ_FLAG, 0x00, 0x00, 0x00]
+            fn len(&self) -> usize { 4 }
+            fn read<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8]  {
+                buf[0] = $addr0 | READ_FLAG;
+                &mut buf[..self.len() + 1]
             }
-            fn write(&self) -> Vec<u8> {
-                let [a, b, c, _] = self.0.to_be_bytes();
-                vec![$addr0 & WRITE_FLAG, a, b, c]
+            fn write<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8] {
+                buf[0] = $addr0 & WRITE_FLAG;
+                for (i, v) in self.0.to_be_bytes().iter().enumerate() {
+                    buf[1+i] = *v
+                }
+                &mut buf[..self.len() + 1]
             }
             fn new(values: &[u8]) -> Self {
                 if values.len() == 4 {
@@ -116,23 +112,59 @@ macro_rules! create_register {
         }
     };
     ($name: ident, u32[$addr0: expr, $addr1: expr, $addr2: expr, $addr3: expr], [$($output:tt)*]) => {
+        #[derive(Default)]
         pub struct $name(u32);
         impl Register for $name {
             fn first_addr(&self) -> u8 {
                 $addr0
             }
-            fn read(&self) -> Vec<u8> {
-                vec![$addr0 | READ_FLAG, 0x00, 0x00, 0x00, 0x00]
+            fn len(&self) -> usize { 4 }
+            fn read<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8]  {
+                buf[0] = $addr0 | READ_FLAG;
+                &mut buf[..self.len() + 1]
             }
-            fn write(&self) -> Vec<u8> {
-                let [a, b, c, d] = self.0.to_be_bytes();
-                vec![$addr0 & WRITE_FLAG, a, b, c, d]
+            fn write<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8] {
+                buf[0] = $addr0 & WRITE_FLAG;
+                for (i, v) in self.0.to_be_bytes().iter().enumerate() {
+                    buf[1+i] = *v
+                }
+                &mut buf[..self.len() + 1]
             }
             fn new(values: &[u8]) -> Self {
                 if values.len() == 5 {
                      Self(u32::from_be_bytes([values[1], values[2], values[3], values[4]]))
                 } else if values.len() == 3 {
                      Self(u32::from_be_bytes([values[0], values[1], values[2], values[3]]))
+                } else {
+                    panic!("Wrong values")
+                }
+            }
+        }
+    };
+    ($name: ident, u64[$addr0: expr], [$($output:tt)*]) => {
+        #[derive(Default)]
+        pub struct $name(u64);
+        impl Register for $name {
+            fn first_addr(&self) -> u8 {
+                $addr0
+            }
+            fn len(&self) -> usize { 8 }
+            fn read<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8]  {
+                buf[0] = $addr0 | READ_FLAG;
+                &mut buf[..self.len() + 1]
+            }
+            fn write<'a>(&self, buf: &'a mut [u8]) -> &'a mut [u8] {
+                buf[0] = $addr0 & WRITE_FLAG;
+                for (i, v) in self.0.to_be_bytes().iter().enumerate() {
+                    buf[1+i] = *v
+                }
+                &mut buf[..self.len() + 1]
+            }
+            fn new(v: &[u8]) -> Self {
+                if v.len() == 9 {
+                     Self(u64::from_be_bytes([v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]]))
+                } else if v.len() == 8 {
+                     Self(u64::from_be_bytes([v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]]))
                 } else {
                     panic!("Wrong values")
                 }
@@ -680,16 +712,14 @@ impl RXFIFOControl {
 }
 
 
-create_register!(FIFOAccess, u8[127], [fifod:8]);
+create_register!(FIFOAccess, u64[127], [fifod:64]);
 impl FIFOAccess {
-    register_field!(u8[fifod, set_fifod]: u8[0, 7]);
+    register_field!(u64[fifod, set_fifod]: u64[0, 64]);
 }
 
 
-
-
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
 
     #[test]

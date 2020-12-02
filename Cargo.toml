@@ -1,8 +1,11 @@
 [package]
-name = "rfm22b-rs"
+name = "rfm22b"
 version = "0.1.0"
 authors = ["Radosław Dejnek <radek.dejnek@gmail.com>"]
 edition = "2018"
+
+[dependencies]
+rtt-target = { version = "0.2.0", features = ["cortex-m"] }
 
 [dependencies.embedded-hal]
 version = "0.2.3"
